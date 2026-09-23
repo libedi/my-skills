@@ -1,0 +1,28 @@
+{
+  "research_id": "",
+  "subproblem_id": "",
+  "unit_id": "",
+  "plan_version": 1,
+  "problem": {
+    "summary": "",
+    "primary_intent": "factual",
+    "secondary_intents": [],
+    "intended_use": "",
+    "scope": [],
+    "out_of_scope": [],
+    "as_of": null,
+    "expected_output": ""
+  },
+  "constraints": {"hard": [], "preferences": []},
+  "goals": [],
+  "hypotheses": [],
+  "required_outcomes": [],
+  "known_facts": [],
+  "user_statements": [],
+  "assumptions": [],
+  "required_questions": [],
+  "evaluation_criteria": [],
+  "available_capabilities": [],
+  "limitations": [],
+  "budget": {}
+}
