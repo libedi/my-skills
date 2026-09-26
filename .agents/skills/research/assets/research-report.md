@@ -18,7 +18,7 @@ For each unresolved question give its importance, reason, effect on the conclusi
 
 ## Method and limits
 
-Record axes used, access or independence limits, budget actually used, and checks passed, warned, or not run. Do not claim structural validation proves source relevance.
+Record axes used, conditional plan review and resolutions, access or independence limits, work-item call limits and usage, phase wall-clock times, budget actually used, and checks passed, warned, or not run. Do not claim structural validation proves source relevance.
 
 ## Sources
 

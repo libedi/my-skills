@@ -9,9 +9,13 @@ import sys
 from pathlib import Path
 
 DEFAULT_LIMITS = {
-    "initial": 3, "rounds": 2, "supplementary": 2,
+    "rounds": 2, "supplementary": 2,
     "extra_explorer": 1, "critic": 1, "retry": 1,
-    "investigation_total": 5, "status_check": 1,
+    "status_check": 1,
+}
+REVIEW_TRIGGERS = {
+    "forced_partition", "unclear_overlap", "shared_unverified_premise",
+    "dependent_parallel_axes", "unresolved_plan_disagreement",
 }
 INITIAL = {"explore"}
 SUPPLEMENT = {"extra_explore", "verify", "critic", "retry"}
@@ -95,16 +99,32 @@ def plan(state: dict, c: Check) -> None:
                 c.error(f"{p}.required_questions[{qi}].importance", "invalid importance")
             c.nonempty(q.get("sufficient_when"), f"{p}.required_questions[{qi}].sufficient_when")
         axes = c.array(unit.get("axes"), f"{p}.axes")
-        if not 1 <= len(axes) <= 3:
-            c.error(f"{p}.axes", "must contain 1 to 3 initial axes")
+        initial = [a for a in axes if isinstance(a, dict) and a.get("round", 1) == 1]
+        if not initial:
+            c.error(f"{p}.axes", "must contain at least one initial axis")
+        if sum(isinstance(a, dict) and a.get("round", 1) == 2 for a in axes) > 1:
+            c.error(f"{p}.axes", "at most one new supplementary axis is permitted")
         aids = c.ids(axes, f"{p}.axes")
         for ai, axis in enumerate(axes):
             axis = c.object(axis, f"{p}.axes[{ai}]")
-            c.nonempty(axis.get("question"), f"{p}.axes[{ai}].question")
+            ap = f"{p}.axes[{ai}]"
+            if type(axis.get("round", 1)) is not int or axis.get("round", 1) not in {1, 2}:
+                c.error(ap, "axis round must be 1 or 2")
+            for key in ("question", "objective", "distinct_from", "evidence_strategy",
+                        "expected_output", "contribution", "independent_start", "assignment_rationale"):
+                c.nonempty(axis.get(key), f"{ap}.{key}")
+            for key in ("scope", "exclude", "intentional_overlap"):
+                values = c.array(axis.get(key), f"{ap}.{key}")
+                for vi, value in enumerate(values):
+                    c.nonempty(value, f"{ap}.{key}[{vi}]")
+            if not axis.get("scope"):
+                c.error(f"{ap}.scope", "must describe the investigation scope")
             assigned = c.array(axis.get("required_question_ids"), f"{p}.axes[{ai}].required_question_ids")
             for qid in assigned:
                 if qid not in qids:
                     c.error(f"{p}.axes[{ai}]", f"unknown question ID {qid}")
+            if not assigned:
+                c.error(ap, "axis must serve at least one required question")
         coverage = c.array(unit.get("coverage_plan"), f"{p}.coverage_plan")
         seen: set[str] = set()
         for ci, raw_cov in enumerate(coverage):
@@ -120,6 +140,12 @@ def plan(state: dict, c: Check) -> None:
                 c.error(f"{p}.coverage_plan[{ci}]", "primary axis does not own question")
         if seen != qids:
             c.error(f"{p}.coverage_plan", f"question mapping mismatch: missing={sorted(qids-seen)}, extra={sorted(seen-qids)}")
+        unit_version = unit.get("plan_version", version)
+        if type(unit_version) is not int or unit_version < 1:
+            c.error(f"{p}.plan_version", "must be a positive integer")
+        planning_checks(unit, unit_version, p, c)
+
+    c.warn("plan", "axis quality, review triggers, context isolation, and runtime capacity require agent/environment verification")
 
     subproblems = root.get("subproblems")
     if subproblems is None:
@@ -181,29 +207,136 @@ def plan(state: dict, c: Check) -> None:
         visit(sid)
 
 
-def dispatch(ledger: dict, c: Check, selected_unit: str | None = None) -> None:
+def authorized(obj: dict) -> bool:
+    return (obj.get("authorized_limit_override") is True
+            and isinstance(obj.get("authorization_reference"), str)
+            and bool(obj["authorization_reference"].strip()))
+
+
+def tool_usage(raw, ceiling: int, path: str, c: Check, allow_override: bool = False) -> None:
+    usage = c.object(raw, path)
+    limit, used = usage.get("limit"), usage.get("used")
+    if type(limit) is not int or limit < 0:
+        c.error(f"{path}.limit", "must be a nonnegative integer")
+    elif limit > ceiling and not allow_override:
+        c.error(f"{path}.limit", f"exceeds {ceiling}-call ceiling without authorization")
+    if type(used) is not int or used < 0:
+        c.error(f"{path}.used", "must be a nonnegative integer")
+    elif type(limit) is int and used > limit:
+        c.error(path, "research-tool call budget exceeded")
+    calls = c.array(usage.get("calls"), f"{path}.calls")
+    if type(used) is int and len(calls) != used:
+        c.error(path, "used count does not match call log")
+    for i, raw_call in enumerate(calls):
+        call = c.object(raw_call, f"{path}.calls[{i}]")
+        for key in ("tool", "purpose"):
+            c.nonempty(call.get(key), f"{path}.calls[{i}].{key}")
+
+
+def planning_checks(unit: dict, version, path: str, c: Check, ready: bool = False) -> None:
+    host = c.object(unit.get("host_check"), f"{path}.host_check")
+    if host.get("status") not in {"pending", "passed"}:
+        c.error(f"{path}.host_check", "invalid request-check status")
+    if ready and (host.get("status") != "passed" or host.get("plan_version") != version):
+        c.error(f"{path}.host_check", "current plan has not been released by Host")
+    review = c.object(unit.get("plan_review"), f"{path}.plan_review")
+    required = review.get("required")
+    if type(required) is not bool:
+        c.error(f"{path}.plan_review.required", "must be a boolean")
+    triggers = c.array(review.get("triggers"), f"{path}.plan_review.triggers")
+    if any(not isinstance(t, str) or t not in REVIEW_TRIGGERS for t in triggers):
+        c.error(f"{path}.plan_review.triggers", "unknown trigger")
+    if bool(triggers) != required:
+        c.error(f"{path}.plan_review", "required flag and triggers disagree")
+    status = review.get("status")
+    if status not in {"not_required", "pending", "resolved", "unresolved"}:
+        c.error(f"{path}.plan_review.status", "invalid status")
+    invocations = c.array(review.get("invocations"), f"{path}.plan_review.invocations")
+    if len(invocations) > 2:
+        c.error(f"{path}.plan_review", "at most two review invocations are permitted")
+    agent_ids = set()
+    for i, raw in enumerate(invocations):
+        invocation = c.object(raw, f"{path}.plan_review.invocations[{i}]")
+        ident = invocation.get("agent_id")
+        if c.nonempty(ident, f"{path}.plan_review.invocations[{i}].agent_id"):
+            agent_ids.add(ident)
+        tool_usage(invocation.get("tool_usage"), 10, f"{path}.plan_review.invocations[{i}].tool_usage", c)
+    if len(agent_ids) > 1:
+        c.error(f"{path}.plan_review", "recheck must reuse the review agent")
+    if required and status == "not_required":
+        c.error(f"{path}.plan_review", "triggered review cannot be skipped")
+    if not required and (status != "not_required" or invocations):
+        c.error(f"{path}.plan_review", "untriggered review must be not_required with no invocations")
+    if required and status == "resolved" and not invocations:
+        c.error(f"{path}.plan_review", "resolved review needs a recorded invocation")
+    findings = c.array(review.get("findings", []), f"{path}.plan_review.findings")
+    c.ids(findings, f"{path}.plan_review.findings")
+    for i, raw in enumerate(findings):
+        finding = c.object(raw, f"{path}.plan_review.findings[{i}]")
+        fp = f"{path}.plan_review.findings[{i}]"
+        if finding.get("severity") not in {"blocking", "major", "minor"}:
+            c.error(fp, "invalid severity")
+        if finding.get("resolution") not in {"accepted", "rejected_with_evidence", "unresolved"}:
+            c.error(fp, "invalid resolution")
+        if finding.get("resolution") in {"accepted", "rejected_with_evidence"}:
+            c.nonempty(finding.get("resolution_reason"), f"{fp}.resolution_reason")
+        if status == "resolved" and finding.get("severity") in {"major", "blocking"} and finding.get("resolution") == "unresolved":
+            c.error(fp, "resolved review has an unresolved substantive finding")
+    if ready and required and (status != "resolved" or review.get("plan_version") != version):
+        c.error(f"{path}.plan_review", "required review is not resolved for the current plan")
+    capacity = c.object(unit.get("capacity"), f"{path}.capacity")
+    slots = capacity.get("investigation_slots")
+    if type(slots) is not int or slots < 0:
+        c.error(f"{path}.capacity", "investigation_slots must be a nonnegative integer")
+    initial_count = sum(isinstance(a, dict) and a.get("round", 1) == 1 for a in unit.get("axes", []))
+    if ready and type(slots) is int and slots < initial_count:
+        c.error(f"{path}.capacity", "insufficient capacity for the whole initial cohort")
+
+
+def dispatch(ledger: dict, c: Check, selected_unit: str | None = None,
+             state: dict | None = None, ready: bool = True) -> None:
     root = c.object(ledger, "ledger")
     c.nonempty(root.get("research_id"), "research_id")
     units = c.object(root.get("units"), "units")
+    state_units = {u.get("id"): u for u in (state or {}).get("units", []) if isinstance(u, dict)}
+    if state is None:
+        c.error("state", "dispatch requires the current plan state")
+    elif root.get("research_id") != state.get("research_id"):
+        c.error("research_id", "state and ledger differ")
     if selected_unit is not None and selected_unit not in units:
         c.error("unit", f"unknown Unit {selected_unit}")
     for uid, raw in units.items():
         if selected_unit is not None and uid != selected_unit:
             continue
         unit = c.object(raw, f"units.{uid}")
-        limits = c.object(unit.get("limits", DEFAULT_LIMITS), f"units.{uid}.limits")
-        for key, ceiling in DEFAULT_LIMITS.items():
+        targets = c.array(unit.get("initial_axis_ids"), f"units.{uid}.initial_axis_ids")
+        valid_targets = [t for t in targets if isinstance(t, str) and t.strip()]
+        if not targets or len(valid_targets) != len(targets) or len(set(valid_targets)) != len(targets):
+            c.error(f"units.{uid}.initial_axis_ids", "must contain distinct nonempty initial axis IDs")
+        current = state_units.get(uid)
+        if current is None:
+            c.error(f"units.{uid}", "unknown Unit in state")
+        else:
+            initial_ids = {a.get("id") for a in current.get("axes", []) if isinstance(a, dict) and a.get("round", 1) == 1}
+            if set(valid_targets) != initial_ids:
+                c.error(f"units.{uid}.initial_axis_ids", "does not match frozen initial axes in state")
+            planning_checks(current, current.get("plan_version", state.get("plan_version")), f"units.{uid}", c, ready)
+        defaults = {**DEFAULT_LIMITS, "initial": len(valid_targets), "investigation_total": len(valid_targets) + 2}
+        limits = c.object(unit.get("limits", {}), f"units.{uid}.limits")
+        for key, ceiling in defaults.items():
             value = limits.get(key, ceiling)
             if type(value) is not int or value < 0:
                 c.error(f"units.{uid}.limits.{key}", "must be a nonnegative integer")
-            elif value > ceiling and not (unit.get("authorized_limit_override") is True
-                    and isinstance(unit.get("authorization_reference"), str)
-                    and unit["authorization_reference"].strip()):
+            elif value > ceiling and not authorized(unit):
                 c.error(f"units.{uid}.limits.{key}", "exceeds default without authorization reference")
         entries = c.array(unit.get("entries"), f"units.{uid}.entries")
         c.ids(entries, f"units.{uid}.entries")
+        initial_terminal = {e.get("target") for e in entries if isinstance(e, dict)
+                            and e.get("kind") == "explore" and e.get("dispatched_at")
+                            and e.get("state") in {"finished", "failed", "cancelled"}}
         counts = {"initial": 0, "supplementary": 0, "extra_explorer": 0,
                   "critic": 0, "retry": 0, "investigation_total": 0, "status_check": 0}
+        explored = set()
         for i, raw_entry in enumerate(entries):
             e = c.object(raw_entry, f"units.{uid}.entries[{i}]")
             p = f"units.{uid}.entries[{i}]"
@@ -213,6 +346,7 @@ def dispatch(ledger: dict, c: Check, selected_unit: str | None = None) -> None:
                 continue
             if not c.nonempty(e.get("target"), f"{p}.target"):
                 continue
+            tool_usage(e.get("tool_usage"), 30 if kind == "explore" else 10, f"{p}.tool_usage", c, authorized(unit))
             if st == "cancelled" and e.get("dispatched_at") is None:
                 if not c.nonempty(e.get("release_reason"), f"{p}.release_reason"):
                     continue
@@ -221,9 +355,22 @@ def dispatch(ledger: dict, c: Check, selected_unit: str | None = None) -> None:
                 c.error(p, "initial exploration must be Round 1")
             if kind in SUPPLEMENT and rnd != 2:
                 c.error(p, "supplementary task must be Round 2")
+            if ready and kind in SUPPLEMENT and st in {"reserved", "dispatched"} and initial_terminal != set(valid_targets):
+                c.error(p, "supplementary work cannot start before the whole initial cohort returns")
+            if kind in {"verify", "retry"} and e["target"] not in valid_targets:
+                c.error(p, "same-axis supplementary work must target an initial axis")
+            if kind == "extra_explore" and current:
+                extra_ids = {a.get("id") for a in current.get("axes", []) if isinstance(a, dict) and a.get("round", 1) == 2}
+                if e["target"] not in extra_ids:
+                    c.error(p, "Extra Explorer must target the recorded new round-2 axis")
             if kind != "status_check" and (type(rnd) is not int or rnd < 1 or rnd > limits.get("rounds", 2)):
                 c.error(p, "invalid Round")
             if kind == "explore":
+                if e["target"] not in valid_targets:
+                    c.error(p, "initial task targets an unplanned axis")
+                if e["target"] in explored:
+                    c.error(p, "initial axis already dispatched or reserved; use supplementary work")
+                explored.add(e["target"])
                 counts["initial"] += 1
             elif kind == "status_check":
                 counts["status_check"] += 1
@@ -236,16 +383,40 @@ def dispatch(ledger: dict, c: Check, selected_unit: str | None = None) -> None:
             if kind != "status_check":
                 counts["investigation_total"] += 1
         for key, count in counts.items():
-            limit = limits.get(key, DEFAULT_LIMITS[key])
+            limit = limits.get(key, defaults[key])
             if type(limit) is int and count > limit:
                 c.error(f"units.{uid}.{key}", f"{count} tasks exceeds limit {limit}")
+        active = sum(isinstance(e, dict) and e.get("state") == "dispatched" for e in entries)
+        if current and type(current.get("capacity", {}).get("investigation_slots")) is int and active > current["capacity"]["investigation_slots"]:
+            c.error(f"units.{uid}", "recorded active work exceeds investigation capacity")
+    active_units = [uid for uid, u in units.items() if isinstance(u, dict)
+                    and any(isinstance(e, dict) and e.get("state") == "dispatched" for e in u.get("entries", []))]
+    if len(active_units) > 1:
+        c.error("units", "multiple Units have active investigation work")
     usage = c.object(root.get("request_usage", {}), "request_usage")
     consistency = usage.get("consistency_work_items", 0)
     if type(consistency) is not int or not 0 <= consistency <= 2:
         c.error("request_usage.consistency_work_items", "must be an integer from 0 to 2")
+    if consistency and state is not None and state.get("subproblems") is None:
+        c.error("request_usage.consistency_work_items", "final consistency allowance is for complex requests only")
+    extra_entries = c.array(usage.get("consistency_entries", []), "request_usage.consistency_entries")
+    c.ids(extra_entries, "request_usage.consistency_entries")
+    if len(extra_entries) != consistency:
+        c.error("request_usage.consistency_entries", "count differs from consistency_work_items")
+    for i, raw in enumerate(extra_entries):
+        entry = c.object(raw, f"request_usage.consistency_entries[{i}]")
+        tool_usage(entry.get("tool_usage"), 10, f"request_usage.consistency_entries[{i}].tool_usage", c)
+        if entry.get("state") not in STATES:
+            c.error(f"request_usage.consistency_entries[{i}].state", "invalid state")
+        if entry.get("state") in {"reserved", "dispatched"} and any(
+                isinstance(e, dict) and e.get("state") in {"reserved", "dispatched"}
+                for u in units.values() if isinstance(u, dict) for e in u.get("entries", [])):
+            c.error("request_usage.consistency_entries", "final consistency work overlaps unfinished Unit work")
+    if ready and selected_unit and any(uid != selected_unit for uid in active_units):
+        c.error("units", "cannot dispatch a second Unit while another is active")
 
 
-def result(state: dict, res: dict, c: Check) -> None:
+def result(state: dict, res: dict, c: Check, ledger: dict | None = None) -> None:
     root = c.object(state, "state")
     obj = c.object(res, "result")
     rid, uid, aid = obj.get("research_id"), obj.get("unit_id"), obj.get("axis_id")
@@ -258,11 +429,33 @@ def result(state: dict, res: dict, c: Check) -> None:
     unit = units[0]
     if aid not in {a.get("id") for a in unit.get("axes", []) if isinstance(a, dict)}:
         c.error("result.axis_id", "unknown axis")
-    if obj.get("plan_version") != root.get("plan_version"):
+    if obj.get("plan_version") != unit.get("plan_version", root.get("plan_version")):
         c.error("result.plan_version", "does not match current plan")
     if obj.get("status") not in {"complete", "partial", "failed"}:
         c.error("result.status", "invalid status")
     c.nonempty(obj.get("answer_summary"), "result.answer_summary")
+    c.nonempty(obj.get("work_item_id"), "result.work_item_id")
+    task_kind = obj.get("task_kind")
+    if task_kind not in INITIAL | SUPPLEMENT:
+        c.error("result.task_kind", "invalid investigation task kind")
+    tool_usage(obj.get("tool_usage"), 30 if task_kind == "explore" else 10,
+               "result.tool_usage", c, authorized(obj))
+    if ledger is not None:
+        if ledger.get("research_id") != rid:
+            c.error("result.research_id", "does not match ledger")
+        recorded_unit = ledger.get("units", {}).get(uid, {})
+        work = [e for e in recorded_unit.get("entries", []) if isinstance(e, dict)
+                and e.get("id") == obj.get("work_item_id")]
+        if len(work) != 1:
+            c.error("result.work_item_id", "unknown or duplicate ledger work item")
+        else:
+            entry = work[0]
+            if entry.get("kind") != task_kind or entry.get("target") != aid:
+                c.error("result.work_item_id", "kind or axis differs from ledger assignment")
+            if entry.get("tool_usage") != obj.get("tool_usage"):
+                c.error("result.tool_usage", "differs from ledger usage; reconcile without resetting counts")
+    else:
+        c.warn("result", "ledger linkage and copied usage were not checked")
     questions = {q.get("id") for q in unit.get("required_questions", []) if isinstance(q, dict)}
     evidence = c.array(obj.get("evidence"), "result.evidence")
     claims = c.array(obj.get("claims"), "result.claims")
@@ -316,6 +509,13 @@ def result(state: dict, res: dict, c: Check) -> None:
                 c.error(f"result.question_coverage[{i}]", f"unknown claim {cid}")
     if not covered:
         c.error("result.question_coverage", "at least one coverage entry is required")
+    if obj.get("status") == "complete":
+        assigned = next((set(a.get("required_question_ids", [])) for a in unit.get("axes", [])
+                         if isinstance(a, dict) and a.get("id") == aid), set())
+        answered = {q.get("question_id") for q in obj.get("question_coverage", [])
+                    if isinstance(q, dict) and q.get("status") == "answered"}
+        if not assigned <= answered:
+            c.error("result.status", "complete with unanswered assigned question")
     c.warn("result", "evidence relevance, source independence, and decisive summary completeness require human/agent review")
 
 
@@ -357,12 +557,29 @@ def status_check(obj: dict, questions: list, path: str, c: Check) -> None:
 
 def report(state: dict, ledger: dict, c: Check) -> None:
     plan(state, c)
-    dispatch(ledger, c)
+    dispatch(ledger, c, state=state, ready=False)
     if state.get("research_id") != ledger.get("research_id"):
         c.error("research_id", "state and ledger differ")
     for i, raw in enumerate(state.get("units", [])):
         unit = c.object(raw, f"units[{i}]")
+        subproblem = next((sp for sp in state.get("subproblems", [])
+                           if isinstance(sp, dict) and sp.get("unit_id") == unit.get("id")), {})
+        if unit.get("result_status") is None and subproblem.get("execution_status") in {"pending", "blocked"}:
+            continue
         status_check(unit, unit.get("required_questions", []), f"units[{i}]", c)
+        if unit.get("result_status") == "complete":
+            planning_checks(unit, unit.get("plan_version", state.get("plan_version")), f"units[{i}]", c, ready=True)
+            recorded = ledger.get("units", {}).get(unit.get("id"), {})
+            if unit.get("id") not in ledger.get("units", {}):
+                c.error(f"units[{i}]", "complete without a Unit ledger")
+            entries = recorded.get("entries", [])
+            if any(isinstance(e, dict) and e.get("state") in {"reserved", "dispatched"} for e in entries):
+                c.error(f"units[{i}]", "complete with unfinished work")
+            initial_done = {e.get("target") for e in entries if isinstance(e, dict)
+                            and e.get("kind") == "explore" and e.get("dispatched_at")
+                            and e.get("state") in {"finished", "failed", "cancelled"}}
+            if set(recorded.get("initial_axis_ids", [])) != initial_done:
+                c.error(f"units[{i}]", "complete before the whole initial cohort returned")
     sps = state.get("subproblems")
     if sps is None:
         return
@@ -370,6 +587,9 @@ def report(state: dict, ledger: dict, c: Check) -> None:
     global_result["question_coverage"] = state.get("global_coverage", [])
     status_check(global_result, state.get("parent_questions", []), "global_result", c)
     if global_result.get("status") == "complete":
+        if any(isinstance(e, dict) and e.get("state") in {"reserved", "dispatched"}
+               for e in ledger.get("request_usage", {}).get("consistency_entries", [])):
+            c.error("global_result", "complete with unfinished final consistency work")
         outcomes = set(state.get("required_outcomes", []))
         mapped = set()
         for cov in state.get("global_coverage", []):
@@ -403,10 +623,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="stage", required=True)
     for name in ("plan", "dispatch", "result", "report"):
         cmd = sub.add_parser(name)
-        if name in {"plan", "result", "report"}:
+        if name in {"plan", "dispatch", "result", "report"}:
             cmd.add_argument("--state", required=True)
-        if name in {"dispatch", "report"}:
-            cmd.add_argument("--ledger", required=True)
+        if name in {"dispatch", "result", "report"}:
+            cmd.add_argument("--ledger", required=name != "result")
         if name == "dispatch":
             cmd.add_argument("--unit")
         if name == "result":
@@ -417,9 +637,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.stage == "plan":
             plan(load(args.state), c)
         elif args.stage == "dispatch":
-            dispatch(load(args.ledger), c, args.unit)
+            state = load(args.state)
+            plan(state, c)
+            dispatch(load(args.ledger), c, args.unit, state=state)
         elif args.stage == "result":
-            result(load(args.state), load(args.result), c)
+            result(load(args.state), load(args.result), c, load(args.ledger) if args.ledger else None)
         else:
             report(load(args.state), load(args.ledger), c)
     except ValueError as exc:
