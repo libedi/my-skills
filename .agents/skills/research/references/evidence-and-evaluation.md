@@ -14,14 +14,26 @@ Check structure, source locations, duplicate origins, coverage of each required 
 
 | Gap | Next action |
 |---|---|
-| Missing critical question or alternative | Extra Explorer, once and within Round 2 |
-| Missing primary passage, measurement, or reproduction | Evidence Verification |
+| Missing question or alternative requiring a new axis | Extra Explorer, once and within Round 2 |
+| Missing evidence or unanswered question inside an existing axis | Scoped Evidence Verification by its existing Explorer when available |
 | Weak premise or reasoning using existing evidence | Critic |
 | Contradictory facts | Compare original source, date, version, and conditions; verify if necessary |
 | User preference changes the choice | Conditional alternatives or a decision request via Host |
 | Sufficient answer | Synthesis; do not spend remaining budget automatically |
 
 Count substantial follow-up research by the Orchestrator as a supplementary task too. A short location check is ordinary evaluation; a new source family or hypothesis is investigation.
+
+## Research-tool call budgets
+
+Each initial Explorer task has at most 30 calls. Scoped same-axis verification, retry, Extra Explorer, Critic, and final consistency tasks each have at most 10. Existing-evidence-only Status Check and each plan-review invocation have at most 10 read calls and cannot search for new sources. Defaults are provisional, not measured optimal values. Stricter user limits take precedence; increases require an explicit user decision recorded by Host.
+
+Count each actual research-tool invocation once: file/document reads and searches, web search/fetch/open/click/find, connector retrieval, and shell calls used to inspect or verify evidence. Failed, denied, and repeated calls count. A batch is one invocation; do not use oversized batches or wrappers to evade the intent. Count nested evidence tools rather than their orchestration wrapper. Coordination messages, timers, result/ledger writes, structural validation, and reading skill contracts as setup are excluded. Record per-work-item `tool_usage`: `limit`, `used`, and `calls` (each with `tool` and a short `purpose`). Usage is cumulative across resumed turns. Structural checks validate recorded counts, not live enforcement or log truth.
+
+Stop early when assigned questions meet `sufficient_when` and material counterevidence is checked. Around 25 of 30 calls, assess remaining gaps and expected value. At the ceiling, stop new research calls and return evidence, coverage, unknowns, and exit reason; writing, returning, and structural validation remain allowed. Do not repeatedly retry access denials or follow new side questions. All initial tasks must return or be recorded failed/cancelled before cohort evaluation.
+
+An existing-axis gap can receive a separate Round 2 verification of at most 10 calls with a specific gap, evidence target, and completion condition. Reuse the Explorer ID when possible; retain its original 30-call usage. A follow-up message or replacement agent never grants another initial allowance. The two supplementary tasks are shared by verification, retry, Extra Explorer, and Critic; none is automatic. A critical gap after exhaustion yields `partial`.
+
+Record plan/review, initial investigation, supplementary work, evaluation, and synthesis start/end times when available. Compare wall-clock phases rather than summing overlapping durations. Existing time goals and stricter user deadlines remain. Without runtime hooks, call ceilings are stopping instructions plus retrospective checks, not externally enforced cutoffs or guaranteed completion times.
 
 ## Unknowns and final status
 
