@@ -354,6 +354,29 @@ class ValidatorTests(unittest.TestCase):
         l["request_usage"]["consistency_entries"][0]["state"] = "finished"
         self.assertFalse(self.check(validate.report, s, l).errors)
 
+    def test_finished_initial_work_without_timestamp_counts_as_returned(self):
+        s, l = state(), ledger()
+        del l["units"]["U1"]["entries"][0]["dispatched_at"]
+        self.assertFalse(self.check(validate.report, s, l).errors)
+        l["units"]["U1"]["entries"].append(
+            {"id": "W2", "round": 2, "kind": "verify", "target": "A",
+             "state": "reserved", "tool_usage": usage(10)})
+        self.assertFalse(self.check(validate.dispatch, l, state=s).errors)
+
+    def test_cancelled_work_with_usage_cannot_release_budget_without_timestamp(self):
+        s, l = state(), ledger()
+        s["units"][0]["axes"] = [axis("A"), axis("B")]
+        l["units"]["U1"]["initial_axis_ids"] = ["A", "B"]
+        l["units"]["U1"]["entries"].extend([
+            {"id": "W2", "round": 1, "kind": "explore", "target": "B", "state": "cancelled",
+             "release_reason": "Looks pre-dispatch", "tool_usage": usage(30, 30)},
+            {"id": "W3", "round": 1, "kind": "explore", "target": "B", "state": "finished",
+             "dispatched_at": "2026-09-23T00:03:00Z", "tool_usage": usage(30, 30)},
+        ])
+        c = self.check(validate.dispatch, l, state=s)
+        self.assertTrue(any("already dispatched" in x for x in c.errors))
+        self.assertTrue(any("counts as dispatched" in x for x in c.warnings))
+
 
 if __name__ == "__main__":
     unittest.main()
