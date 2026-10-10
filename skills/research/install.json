@@ -1,0 +1,15 @@
+{
+  "name": "research",
+  "agents": {
+    "codex": [
+      "adapters/codex/agents/research-orchestrator.toml",
+      "adapters/codex/agents/research-explorer.toml",
+      "adapters/codex/agents/research-critic.toml"
+    ],
+    "claude": [
+      "adapters/claude/agents/research-orchestrator.md",
+      "adapters/claude/agents/research-explorer.md",
+      "adapters/claude/agents/research-critic.md"
+    ]
+  }
+}

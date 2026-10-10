@@ -6,6 +6,8 @@ Runtime records are JSON. The integrated design's YAML examples express the same
 
 `state.json` contains `research_id`, `plan_version`, `original_request`, and `units`. Each Unit has `id`, `subproblem_id`, `required_questions` (ID, importance, sufficient_when), `axes`, and `coverage_plan` (question ID and primary axis). A Unit may record its own positive `plan_version` (default: root version); releases, reviews, and results use that version so an independent Unit's revision need not restamp earlier unaffected results. Axes contain the fields in [axis design](axis-design.md): question, objective, assigned question IDs, scope, exclusions, differentiation, intentional overlap, evidence strategy, expected output, contribution, independent start, and assignment rationale. `round` defaults to 1; at most one new axis may have round 2. There is no fixed initial-axis cap.
 
+Record runtime selection beside the state or in its validation summary: runtime, role and agent ID, requested model and effort, observed applied values (null when unavailable), fresh-context request, and verification status (`verified`, `unverified`, or `mismatch`). An unavailable applied value is not a verified match. Report observed mismatches and any unverified settings to the Host; the validator does not prove runtime configuration.
+
 Each Unit also records:
 
 - `host_check: {status: pending|passed, plan_version: <released version>}`.

@@ -1,0 +1,7 @@
+# Generated runtime discovery targets; edit skills/ instead.
+/.agents/skills/
+/.codex/agents/
+/.claude/skills/
+/.claude/agents/
+__pycache__/
+*.pyc
