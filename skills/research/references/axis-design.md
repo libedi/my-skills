@@ -34,7 +34,7 @@ The reviewer uses existing inputs only: no new-source search, source edits, publ
 
 Allow one initial review and at most one targeted recheck by the same reviewer: two invocations per Unit, each with at most 10 existing-input read calls. This budget is separate from investigation tasks but included in usage. Do not create successive reviewers or reset allowances through messages. After recheck, unresolved substantive issues stop dispatch and are reported through Host. If fresh review cannot run, disclose the capability gap; do not mark it resolved.
 
-Host follow-up tasks on the same Orchestrator ID contain only request-linked discrepancies, unchanged review artifacts, confirmed user decisions, or execution limits. A message alone may not resume an idle agent. A version-specific release follows the request check and required-review reconciliation; it is not user approval and cannot expand constraints or budgets.
+Host follow-up tasks, on the same Orchestrator ID or to an adapter's continuation instance, contain only request-linked discrepancies, unchanged review artifacts, confirmed user decisions, or execution limits. A message alone may not resume an idle agent. A version-specific release follows the request check and required-review reconciliation; it is not user approval and cannot expand constraints or budgets.
 
 ## Escape Axis
 

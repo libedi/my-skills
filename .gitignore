@@ -3,5 +3,7 @@
 /.codex/agents/
 /.claude/skills/
 /.claude/agents/
+/.kiro/skills/
+/.kiro/agents/
 __pycache__/
 *.pyc

@@ -10,6 +10,11 @@
       "adapters/claude/agents/research-orchestrator.md",
       "adapters/claude/agents/research-explorer.md",
       "adapters/claude/agents/research-critic.md"
+    ],
+    "kiro": [
+      "adapters/kiro/agents/research-orchestrator.json",
+      "adapters/kiro/agents/research-explorer.json",
+      "adapters/kiro/agents/research-critic.json"
     ]
   }
 }

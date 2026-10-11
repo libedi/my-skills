@@ -65,5 +65,65 @@ class ClaudeAdapterPolicyTests(unittest.TestCase):
         self.assertIn(inspector, (SKILL / "adapters" / "claude" / "agents" / "research-orchestrator.md").read_text(encoding="utf-8"))
 
 
+def kiro_definition(role: str) -> dict:
+    return json.loads((SKILL / "adapters" / "kiro" / "agents" / f"{role}.json").read_text(encoding="utf-8"))
+
+
+def kiro_requested_efforts() -> dict[str, str]:
+    """Kiro has no per-agent effort field, so runtime.md's role table is the single source."""
+    efforts = {}
+    for line in (SKILL / "adapters" / "kiro" / "runtime.md").read_text(encoding="utf-8").splitlines():
+        cells = [cell.strip(" `") for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 3 and cells[0] in ROLES:
+            efforts[cells[0]] = cells[2]
+    return efforts
+
+
+def fs_write_rules(definition: dict) -> list[dict]:
+    return [rule for rule in definition.get("permissions", {}).get("rules", []) if rule.get("capability") == "fs_write"]
+
+
+class KiroAdapterPolicyTests(unittest.TestCase):
+    def test_manifest_installs_every_role(self):
+        manifest = json.loads((SKILL / "install.json").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(Path(item).stem for item in manifest["agents"]["kiro"]), sorted(ROLES))
+
+    def test_definition_names_match_roles(self):
+        for role in ROLES:
+            with self.subTest(role=role):
+                self.assertEqual(kiro_definition(role)["name"], role)
+
+    def test_only_orchestrator_can_spawn_and_only_research_workers(self):
+        orchestrator = kiro_definition("research-orchestrator")
+        self.assertIn("subagent", orchestrator["tools"])
+        self.assertEqual(sorted(orchestrator["toolsSettings"]["subagent"]["availableAgents"]), sorted(WORKERS))
+        for role in WORKERS:
+            with self.subTest(role=role):
+                tools = set(kiro_definition(role)["tools"])
+                self.assertFalse(tools & {"subagent", "@builtin", "*"})
+
+    def test_critic_has_no_write_tool(self):
+        self.assertNotIn("write", kiro_definition("research-critic")["tools"])
+
+    def test_explorer_writes_only_under_research(self):
+        rules = fs_write_rules(kiro_definition("research-explorer"))
+        self.assertIn({"capability": "fs_write", "match": ["research/**"], "effect": "allow"}, rules)
+        self.assertTrue(any(rule["effect"] == "deny" and rule["match"] == ["**"] and rule.get("exclude") == ["research/**"] for rule in rules))
+
+    def test_requested_effort_matches_codex_profile_for_each_role(self):
+        efforts = kiro_requested_efforts()
+        for role in ROLES:
+            with self.subTest(role=role):
+                codex = tomllib.loads((SKILL / "adapters" / "codex" / "agents" / f"{role}.toml").read_text(encoding="utf-8"))
+                self.assertEqual(efforts.get(role), codex["model_reasoning_effort"])
+
+    def test_role_table_model_matches_definition(self):
+        for line in (SKILL / "adapters" / "kiro" / "runtime.md").read_text(encoding="utf-8").splitlines():
+            cells = [cell.strip(" `") for cell in line.strip().strip("|").split("|")]
+            if len(cells) >= 3 and cells[0] in ROLES:
+                with self.subTest(role=cells[0]):
+                    self.assertEqual(cells[1], kiro_definition(cells[0])["model"])
+
+
 if __name__ == "__main__":
     unittest.main()
