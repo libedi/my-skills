@@ -11,6 +11,9 @@ from install import available, manifest
 
 MODEL_ID = re.compile(r"\b(?:gpt-\d|claude-(?:opus|sonnet|haiku))")
 LINK = re.compile(r"\]\(([^)]+)\)")
+CLAUDE_MODEL_ALIASES = {"opus", "sonnet", "haiku", "fable", "inherit"}
+CLAUDE_MODEL_ID = re.compile(r"claude-[a-z0-9.-]+")
+CLAUDE_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -57,6 +60,12 @@ def check() -> None:
             fields = frontmatter(path)
             if not all(fields.get(field) for field in ("name", "description", "model", "effort")):
                 raise ValueError(f"Incomplete Claude profile: {path}")
+            if fields["name"] != path.stem:
+                raise ValueError(f"Claude profile name differs from file name: {path}")
+            if fields["model"] not in CLAUDE_MODEL_ALIASES and not CLAUDE_MODEL_ID.fullmatch(fields["model"]):
+                raise ValueError(f"Unknown Claude model {fields['model']!r}: {path}")
+            if fields["effort"] not in CLAUDE_EFFORTS:
+                raise ValueError(f"Unknown Claude effort {fields['effort']!r}: {path}")
     print(f"Portability checks passed for {len(available())} skill(s)")
 
 
