@@ -1,6 +1,6 @@
 # Kiro runtime adapter
 
-Install the skill and all three agent definitions together. The logical Research Orchestrator, Explorer, and Critic map to the custom agents `research-orchestrator`, `research-explorer`, and `research-critic`. The definitions are JSON so that Kiro IDE and Kiro CLI load the same files. Pass the installed skill's absolute path in every assignment; no definition assumes a repository-relative path.
+Install the skill and all three agent definitions together. The logical Research Orchestrator, Explorer, and Critic map to the custom agents `research-orchestrator`, `research-explorer`, and `research-critic`. This adapter targets Kiro IDE 1.x and Kiro CLI 3.x, where `toolsSettings` is replaced by `permissions`. The definitions use the JSON form of the agent schema, which both load from `.kiro/agents/`. Pass the installed skill's absolute path in every assignment; no definition assumes a repository-relative path.
 
 | Role | Model | Requested effort |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ Kiro custom agents have no effort field. Effort comes from the session (`/effort
 - The Host starts each role through Kiro's subagent mechanism by naming the custom agent, for example "Use the research-orchestrator agent to …". A request naming an unknown agent fails rather than falling back to the default agent.
 - A subagent runs with an isolated conversation history. Steering files, MCP servers, workspace files, and permission settings are shared. Steering is project configuration, not conversation history; put any steering rule that should constrain research into the Intake Packet as a hard constraint rather than relying on it.
 - The Host's conditional plan reviewer is Kiro's default subagent without a custom agent.
-- Only the Orchestrator has the `subagent` tool, and `toolsSettings.subagent.availableAgents` limits it to `research-explorer` and `research-critic`. Both are listed in `trustedAgents` so that permission prompts do not stall a parallel cohort. Explorer and Critic have no `subagent` tool, so they cannot delegate further.
+- Only the Orchestrator has the `subagent` tool. Its `permissions` rules allow the `subagent` capability for `research-explorer` and `research-critic` without a prompt and deny every other agent. Explorer and Critic have no `subagent` tool, so they cannot delegate further.
 
 ## Continuation instead of resume
 
@@ -39,9 +39,11 @@ Workers follow the same rule. A Kiro worker cannot be resumed, so a same-axis ve
 
 Kiro does not document whether a subagent can start its own subagents. If the Orchestrator's subagent tool is missing or fails to start a worker, it returns exact sibling assignments. The Host starts those workers by name, collects their unchanged results into `research/<run-id>/results/`, and starts a continuation instance to evaluate them.
 
-## Write and shell limits
+## Permission rules
 
-Orchestrator and Explorer may write only under `research/`; a `deny` rule covers every other path. Critic has no write tool and returns objections inline. Explorer's shell is limited to read-only inspection commands such as `git log`, `grep`, and `cat`; other commands are denied. Critic has no shell. These rules narrow what the role instructions already forbid; they do not prove that no file outside `research/` changed.
+A subagent inherits its parent session's rules, combined with its own by deny-wins intersection: a `deny` anywhere wins, then `ask`, then `allow`, and an action no rule covers prompts for approval. The Host session's user and workspace `permissions.yaml` therefore apply to every role, and the Orchestrator's rules apply to its workers. A Host-level `ask` or `deny` overrides the allow rules below and can stall or block a parallel cohort; resolve that with the user before releasing investigation.
+
+Every role allows file reads and web search and fetch without a prompt. Orchestrator and Explorer may write only under `./research/`; a `deny` rule covers every other workspace path. The Orchestrator may run `python` without a prompt for the validator; other commands prompt. Critic has no write tool and returns objections inline. Explorer's shell is limited to read-only inspection commands such as `git log`, `grep`, and `cat`; other commands are denied. Critic has no shell. Shell patterns match command prefixes, so arguments such as output redirection are not inspected. These rules narrow what the role instructions already forbid; they do not prove that no file outside `research/` changed.
 
 ## Verification status
 

@@ -79,8 +79,8 @@ def kiro_requested_efforts() -> dict[str, str]:
     return efforts
 
 
-def fs_write_rules(definition: dict) -> list[dict]:
-    return [rule for rule in definition.get("permissions", {}).get("rules", []) if rule.get("capability") == "fs_write"]
+def rules_for(definition: dict, capability: str) -> list[dict]:
+    return [rule for rule in definition.get("permissions", {}).get("rules", []) if rule.get("capability") == capability]
 
 
 class KiroAdapterPolicyTests(unittest.TestCase):
@@ -96,19 +96,28 @@ class KiroAdapterPolicyTests(unittest.TestCase):
     def test_only_orchestrator_can_spawn_and_only_research_workers(self):
         orchestrator = kiro_definition("research-orchestrator")
         self.assertIn("subagent", orchestrator["tools"])
-        self.assertEqual(sorted(orchestrator["toolsSettings"]["subagent"]["availableAgents"]), sorted(WORKERS))
+        spawn = rules_for(orchestrator, "subagent")
+        self.assertIn({"capability": "subagent", "match": sorted(WORKERS), "effect": "allow"}, spawn)
+        self.assertIn({"capability": "subagent", "match": ["*"], "exclude": sorted(WORKERS), "effect": "deny"}, spawn)
         for role in WORKERS:
             with self.subTest(role=role):
                 tools = set(kiro_definition(role)["tools"])
                 self.assertFalse(tools & {"subagent", "@builtin", "*"})
 
+    def test_no_settings_removed_in_cli_v3(self):
+        for role in ROLES:
+            with self.subTest(role=role):
+                self.assertFalse(set(kiro_definition(role)) & {"toolsSettings", "allowedTools", "toolAliases", "keyboardShortcut"})
+
     def test_critic_has_no_write_tool(self):
         self.assertNotIn("write", kiro_definition("research-critic")["tools"])
 
-    def test_explorer_writes_only_under_research(self):
-        rules = fs_write_rules(kiro_definition("research-explorer"))
-        self.assertIn({"capability": "fs_write", "match": ["research/**"], "effect": "allow"}, rules)
-        self.assertTrue(any(rule["effect"] == "deny" and rule["match"] == ["**"] and rule.get("exclude") == ["research/**"] for rule in rules))
+    def test_orchestrator_and_explorer_write_only_under_research(self):
+        for role in ("research-orchestrator", "research-explorer"):
+            with self.subTest(role=role):
+                rules = rules_for(kiro_definition(role), "fs_write")
+                self.assertIn({"capability": "fs_write", "match": ["./research/**"], "effect": "allow"}, rules)
+                self.assertIn({"capability": "fs_write", "match": ["./**"], "exclude": ["./research/**"], "effect": "deny"}, rules)
 
     def test_requested_effort_matches_codex_profile_for_each_role(self):
         efforts = kiro_requested_efforts()

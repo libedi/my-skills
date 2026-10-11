@@ -12,34 +12,70 @@
     "@mcp"
   ],
   "includeMcpJson": true,
-  "toolsSettings": {
-    "subagent": {
-      "availableAgents": [
-        "research-explorer",
-        "research-critic"
-      ],
-      "trustedAgents": [
-        "research-explorer",
-        "research-critic"
-      ]
-    }
-  },
   "permissions": {
     "rules": [
       {
-        "capability": "fs_write",
+        "capability": "fs_read",
         "match": [
-          "research/**"
+          "**"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "web_search",
+        "match": [
+          "*"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "web_fetch",
+        "match": [
+          "*"
         ],
         "effect": "allow"
       },
       {
         "capability": "fs_write",
         "match": [
-          "**"
+          "./research/**"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          "./**"
         ],
         "exclude": [
-          "research/**"
+          "./research/**"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "shell",
+        "match": [
+          "python *",
+          "python3 *"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "subagent",
+        "match": [
+          "research-critic",
+          "research-explorer"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "subagent",
+        "match": [
+          "*"
+        ],
+        "exclude": [
+          "research-critic",
+          "research-explorer"
         ],
         "effect": "deny"
       }

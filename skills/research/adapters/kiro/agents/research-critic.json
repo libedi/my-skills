@@ -8,5 +8,30 @@
     "web",
     "@mcp"
   ],
-  "includeMcpJson": true
+  "includeMcpJson": true,
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "match": [
+          "**"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "web_search",
+        "match": [
+          "*"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "web_fetch",
+        "match": [
+          "*"
+        ],
+        "effect": "allow"
+      }
+    ]
+  }
 }

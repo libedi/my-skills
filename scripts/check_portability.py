@@ -15,6 +15,7 @@ LINK = re.compile(r"\]\(([^)]+)\)")
 CLAUDE_MODEL_ALIASES = {"opus", "sonnet", "haiku", "fable", "inherit"}
 CLAUDE_MODEL_ID = re.compile(r"claude-[a-z0-9.-]+")
 CLAUDE_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+KIRO_REMOVED_FIELDS = {"toolsSettings", "allowedTools", "toolAliases", "keyboardShortcut"}
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -63,8 +64,15 @@ def check_kiro(path: Path) -> None:
         raise ValueError(f"Kiro tools must be a list of names: {path}")
     if ".kiro/skills/" in profile["prompt"]:
         raise ValueError(f"Repository-relative skill path: {path}")
-    if "subagent" in profile["tools"] and not profile.get("toolsSettings", {}).get("subagent", {}).get("availableAgents"):
-        raise ValueError(f"Kiro agent can spawn any agent; set toolsSettings.subagent.availableAgents: {path}")
+    removed = set(profile) & KIRO_REMOVED_FIELDS
+    if removed:
+        raise ValueError(f"Kiro fields removed in CLI V3 / IDE 1.x {sorted(removed)}: {path}")
+    rules = profile.get("permissions", {}).get("rules", [])
+    if "subagent" in profile["tools"] and not any(
+        rule.get("capability") == "subagent" and rule.get("effect") == "deny" and rule.get("match") == ["*"] and rule.get("exclude")
+        for rule in rules
+    ):
+        raise ValueError(f"Kiro agent can spawn any agent; deny other subagents in permissions.rules: {path}")
 
 
 PROFILE_CHECKS = {"codex": check_codex, "claude": check_claude, "kiro": check_kiro}
