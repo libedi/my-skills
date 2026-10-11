@@ -4,11 +4,11 @@ Install the skill and all three agent definitions together. The logical Research
 
 | Role | Model | Requested effort |
 | --- | --- | --- |
-| research-orchestrator | `claude-opus-4.8` | `high` |
-| research-explorer | `claude-sonnet-4.6` | `medium` |
-| research-critic | `claude-sonnet-4.6` | `high` |
+| research-orchestrator | `claude-opus-5.5` | `high` |
+| research-explorer | `claude-sonnet-5.5` | `medium` |
+| research-critic | `claude-sonnet-5.5` | `high` |
 
-The agent JSON `model` field is the single source for models; the table repeats it and a test keeps them equal. Model IDs available to an organization differ, so confirm them with `/model` and change the adapter JSON in the skill source before installing; the installer will not uninstall an agent file edited after installation. If a model is unavailable, the first prompt to that agent fails; treat that as inability to select the required profile.
+The agent JSON `model` field is the single source for models; the table repeats it and a test keeps them equal. Model IDs available to an organization differ, so confirm them with `/model` and change the adapter JSON in the skill source before installing; the installer will not uninstall an agent file edited after installation. Claude Opus 5.5 and Sonnet 5.5 are Experimental in Kiro, and an organization's model governance may not offer them; Claude Opus 5 and Sonnet 5 are the Active alternatives. If a model is unavailable, the first prompt to that agent fails; treat that as inability to select the required profile.
 
 ## Effort is not selectable per agent
 
@@ -43,7 +43,11 @@ Kiro does not document whether a subagent can start its own subagents. If the Or
 
 A subagent inherits its parent session's rules, combined with its own by deny-wins intersection: a `deny` anywhere wins, then `ask`, then `allow`, and an action no rule covers prompts for approval. The Host session's user and workspace `permissions.yaml` therefore apply to every role, and the Orchestrator's rules apply to its workers. A Host-level `ask` or `deny` overrides the allow rules below and can stall or block a parallel cohort; resolve that with the user before releasing investigation.
 
-Every role allows file reads and web search and fetch without a prompt. Orchestrator and Explorer may write only under `./research/`; a `deny` rule covers every other workspace path. The Orchestrator may run `python` without a prompt for the validator; other commands prompt. Critic has no write tool and returns objections inline. Explorer's shell is limited to read-only inspection commands such as `git log`, `grep`, and `cat`; other commands are denied. Critic has no shell. Shell patterns match command prefixes, so arguments such as output redirection are not inspected. These rules narrow what the role instructions already forbid; they do not prove that no file outside `research/` changed.
+Because rules are inherited, the Orchestrator is narrowed through its `tools`, not through `deny` rules that would also bind its workers. Its only `deny` rules cover writes outside `./research/` and agents other than the two workers, which no worker needs.
+
+The Orchestrator has `read`, `write`, `shell`, and `subagent` and nothing else. `write` keeps `state.json`, `ledger.json`, `handoff.md`, and the report, which continuation instances depend on. `shell` runs the bundled validator without a prompt; any other command prompts. It has no `web` or MCP tools: Kiro's `web` tag covers search as well as fetch, and a `deny` on search would be inherited by Explorers, so the Orchestrator cannot be limited to reopening cited sources. It judges evidence from worker results and local files, and sends an independent re-read of a decisive source to `research-critic` as a Status Check or Critic task. Disclose when a decisive web or connector source was checked only through worker observations.
+
+Every role's rules allow file reads and web search and fetch without a prompt; on the Orchestrator these rules exist only so that its workers inherit an `allow`. Orchestrator and Explorer may write only under `./research/`; a `deny` rule covers every other workspace path. Critic has no write tool and returns objections inline. Explorer's shell is limited to read-only inspection commands such as `git log`, `grep`, and `cat`; other commands are denied. Critic has no shell. Shell patterns match command prefixes, so arguments such as output redirection are not inspected. These rules narrow what the role instructions already forbid; they do not prove that no file outside `research/` changed.
 
 ## Verification status
 

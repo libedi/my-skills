@@ -79,6 +79,10 @@ def kiro_requested_efforts() -> dict[str, str]:
     return efforts
 
 
+def rules_for_all(definition: dict) -> list[dict]:
+    return definition.get("permissions", {}).get("rules", [])
+
+
 def rules_for(definition: dict, capability: str) -> list[dict]:
     return [rule for rule in definition.get("permissions", {}).get("rules", []) if rule.get("capability") == capability]
 
@@ -108,6 +112,15 @@ class KiroAdapterPolicyTests(unittest.TestCase):
         for role in ROLES:
             with self.subTest(role=role):
                 self.assertFalse(set(kiro_definition(role)) & {"toolsSettings", "allowedTools", "toolAliases", "keyboardShortcut"})
+
+    def test_orchestrator_is_a_coordinator_without_research_tools(self):
+        self.assertEqual(set(kiro_definition("research-orchestrator")["tools"]), {"read", "write", "shell", "subagent"})
+        self.assertFalse(kiro_definition("research-orchestrator").get("includeMcpJson"))
+
+    def test_orchestrator_denies_nothing_its_workers_need(self):
+        # Kiro subagents inherit the parent's rules by deny-wins intersection.
+        denied = {rule["capability"] for rule in rules_for_all(kiro_definition("research-orchestrator")) if rule["effect"] == "deny"}
+        self.assertLessEqual(denied, {"fs_write", "subagent"})
 
     def test_critic_has_no_write_tool(self):
         self.assertNotIn("write", kiro_definition("research-critic")["tools"])
