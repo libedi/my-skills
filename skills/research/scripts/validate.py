@@ -276,15 +276,22 @@ def planning_checks(unit: dict, version, path: str, c: Check, ready: bool = Fals
     invocations = c.array(review.get("invocations"), f"{path}.plan_review.invocations")
     if len(invocations) > 2:
         c.error(f"{path}.plan_review", "at most two review invocations are permitted")
-    agent_ids = set()
+    agent_ids = []
     for i, raw in enumerate(invocations):
-        invocation = c.object(raw, f"{path}.plan_review.invocations[{i}]")
+        ip = f"{path}.plan_review.invocations[{i}]"
+        invocation = c.object(raw, ip)
         ident = invocation.get("agent_id")
-        if c.nonempty(ident, f"{path}.plan_review.invocations[{i}].agent_id"):
-            agent_ids.add(ident)
-        tool_usage(invocation.get("tool_usage"), 10, f"{path}.plan_review.invocations[{i}].tool_usage", c)
-    if len(agent_ids) > 1:
-        c.error(f"{path}.plan_review", "recheck must reuse the review agent")
+        c.nonempty(ident, f"{ip}.agent_id")
+        agent_ids.append(ident)
+        tool_usage(invocation.get("tool_usage"), 10, f"{ip}.tool_usage", c)
+        if "continuation_of" in invocation and i == 0:
+            c.error(ip, "the initial review cannot be a continuation")
+    if len(agent_ids) == 2 and agent_ids[0] != agent_ids[1]:
+        recheck = invocations[1] if isinstance(invocations[1], dict) else {}
+        if recheck.get("continuation_of") != agent_ids[0]:
+            c.error(f"{path}.plan_review", "recheck must reuse the review agent or continue it by continuation_of")
+        else:
+            c.nonempty(recheck.get("prior_review"), f"{path}.plan_review.invocations[1].prior_review")
     if required and status == "not_required":
         c.error(f"{path}.plan_review", "triggered review cannot be skipped")
     if not required and (status != "not_required" or invocations):

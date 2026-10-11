@@ -33,6 +33,8 @@ Kiro documents no way to resume a finished subagent, and a subagent task graph c
 
 If safe file storage is unavailable, the Orchestrator returns the state inline and the Host passes it unchanged to the next instance.
 
+The plan reviewer cannot be resumed either. When the Orchestrator's revision needs the one targeted recheck, the Host starts a new default subagent as a continuation of the first review. It passes the first review's full unchanged output, the plan version that review saw, and the revised plan, and asks for a check of those findings and the revisions they caused only. The Host saves the first review output under `research/<run-id>/reviews/`. The Orchestrator records the recheck with its own agent ID, `continuation_of` set to the first reviewer's agent ID, and `prior_review` set to that saved file; the validator rejects a different reviewer without both. There is still at most one recheck, and a third reviewer is never started.
+
 Workers follow the same rule. A Kiro worker cannot be resumed, so a same-axis verification starts a new `research-explorer` with the earlier result file labelled as prior work. It is recorded as a supplementary verify task and carries forward the original usage. Dispatch the initial cohort as one batch without dependencies, and supplementary work as a later batch.
 
 ## Depth and the sibling fallback
