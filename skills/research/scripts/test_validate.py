@@ -178,6 +178,32 @@ class ValidatorTests(unittest.TestCase):
         review["invocations"].append(copy.deepcopy(review["invocations"][0]))
         self.assertTrue(any("two review" in e for e in self.check(validate.plan, s).errors))
 
+    def test_plan_review_recheck_as_continuation_when_reviewer_cannot_resume(self):
+        s = state()
+        review = s["units"][0]["plan_review"]
+        review.update(required=True, triggers=["forced_partition"], status="resolved", invocations=[
+            {"agent_id": "review-1", "tool_usage": usage(10)},
+            {"agent_id": "review-2", "continuation_of": "review-1",
+             "prior_review": "research/R-1/reviews/U1-review-1.json", "tool_usage": usage(10)},
+        ])
+        self.assertFalse(self.check(validate.plan, s).errors)
+
+        recheck = review["invocations"][1]
+        del recheck["prior_review"]
+        self.assertTrue(any("prior_review" in e for e in self.check(validate.plan, s).errors))
+
+        recheck["prior_review"] = "research/R-1/reviews/U1-review-1.json"
+        recheck["continuation_of"] = "review-0"
+        self.assertTrue(any("reuse" in e for e in self.check(validate.plan, s).errors))
+
+        recheck["continuation_of"] = "review-1"
+        review["invocations"][0]["continuation_of"] = "review-0"
+        self.assertTrue(any("initial review" in e for e in self.check(validate.plan, s).errors))
+
+        del review["invocations"][0]["continuation_of"]
+        review["invocations"].append(dict(recheck, agent_id="review-3"))
+        self.assertTrue(any("two review" in e for e in self.check(validate.plan, s).errors))
+
     def test_tool_call_budget_and_log_mismatch(self):
         l = ledger()
         entry = l["units"]["U1"]["entries"][0]

@@ -1,4 +1,4 @@
-"""Install one or more repository skills into Codex or Claude Code discovery paths."""
+"""Install one or more repository skills into Codex, Claude Code, or Kiro discovery paths."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / "skills"
 MARKER = ".my-skills-install.json"
-DISCOVERY = {"codex": (".agents", ".codex"), "claude": (".claude", ".claude")}
+DISCOVERY = {"codex": (".agents", ".codex"), "claude": (".claude", ".claude"), "kiro": (".kiro", ".kiro")}
 
 
 def manifest(name: str) -> tuple[Path, dict]:

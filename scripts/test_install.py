@@ -23,7 +23,7 @@ class InstallTests(unittest.TestCase):
 
     def test_copy_install_and_uninstall_both_runtimes(self):
         source, data = manifest("research")
-        for target in ("codex", "claude"):
+        for target in ("codex", "claude", "kiro"):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 install(root, target, ["research"], "copy")
@@ -36,6 +36,16 @@ class InstallTests(unittest.TestCase):
                 uninstall(root, target, ["research"])
                 self.assertFalse(skill.exists())
                 self.assertTrue(all(not destination.exists() for _, destination in agents))
+
+    def test_kiro_uses_kiro_discovery_folders(self):
+        _, data = manifest("research")
+        root = Path("/project")
+        skill, agents = destinations(root, "kiro", "research", data)
+        self.assertEqual(skill, root / ".kiro" / "skills" / "research")
+        self.assertEqual(
+            sorted(destination for _, destination in agents),
+            sorted(root / ".kiro" / "agents" / f"{role}.json" for role in ("research-critic", "research-explorer", "research-orchestrator")),
+        )
 
     def test_collision_does_not_overwrite(self):
         _, data = manifest("research")
