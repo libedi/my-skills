@@ -5,6 +5,7 @@ Reusable agent skills live under `skills/`. The skill package is the source of t
 | Skill | Purpose |
 | --- | --- |
 | [research](skills/research/SKILL.md) | Evidence-backed research using an Orchestrator, independent Explorers, and optional Critic. |
+| [brainstorming](skills/brainstorming/SKILL.md) | Pre-spec discussion for a new feature: interview, scope check, and decision-first acceptance criteria before handing off to a spec tool. No agent profiles. |
 
 Run `python scripts/install.py` to list installable skills. Python 3.11 or newer is required for the installer and validator.
 
