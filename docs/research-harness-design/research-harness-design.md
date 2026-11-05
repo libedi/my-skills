@@ -1,5 +1,7 @@
 # Research Harness v1 — Codex 통합 설계
 
+> 이 문서는 최초 Codex 구현의 설계 기록이다. 현재 실행 계약과 배포 구조는 [`skills/research/SKILL.md`](../../skills/research/SKILL.md), `skills/research/adapters/`, 루트 `README.md`를 따른다. 아래의 옛 `.agents/skills/research` 및 `.codex/agents` 경로는 당시 구현을 설명하며 현재 원본 위치가 아니다.
+
 - 문서 기준일: 2026-09-26
 - 대상: Codex에서 실행할 `research` 스킬
 - 범위: 단일·복합 주제의 연구 절차, 하위 문제·탐색 축 설계, 역할별 계약, 근거 평가, 예산, 종료 및 검증

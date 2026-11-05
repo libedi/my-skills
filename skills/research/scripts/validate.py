@@ -213,6 +213,28 @@ def authorized(obj: dict) -> bool:
             and bool(obj["authorization_reference"].strip()))
 
 
+TERMINAL = {"finished", "failed", "cancelled"}
+
+
+def pre_dispatch_cancel(entry: dict) -> bool:
+    """A cancellation that never ran: no dispatch time and no research-tool usage.
+
+    Usage is the authoritative signal. Timestamps are optional ("where available"),
+    so a missing dispatched_at alone must not release a reservation or its budget.
+    """
+    usage = entry.get("tool_usage")
+    used = usage.get("used") if isinstance(usage, dict) else None
+    return (entry.get("state") == "cancelled" and entry.get("dispatched_at") is None
+            and used == 0)
+
+
+def initial_returned(entries: list) -> set:
+    """Initial axes whose exploration actually ran and reached a terminal state."""
+    return {e.get("target") for e in entries if isinstance(e, dict)
+            and e.get("kind") == "explore" and e.get("state") in TERMINAL
+            and not pre_dispatch_cancel(e)}
+
+
 def tool_usage(raw, ceiling: int, path: str, c: Check, allow_override: bool = False) -> None:
     usage = c.object(raw, path)
     limit, used = usage.get("limit"), usage.get("used")
@@ -254,15 +276,22 @@ def planning_checks(unit: dict, version, path: str, c: Check, ready: bool = Fals
     invocations = c.array(review.get("invocations"), f"{path}.plan_review.invocations")
     if len(invocations) > 2:
         c.error(f"{path}.plan_review", "at most two review invocations are permitted")
-    agent_ids = set()
+    agent_ids = []
     for i, raw in enumerate(invocations):
-        invocation = c.object(raw, f"{path}.plan_review.invocations[{i}]")
+        ip = f"{path}.plan_review.invocations[{i}]"
+        invocation = c.object(raw, ip)
         ident = invocation.get("agent_id")
-        if c.nonempty(ident, f"{path}.plan_review.invocations[{i}].agent_id"):
-            agent_ids.add(ident)
-        tool_usage(invocation.get("tool_usage"), 10, f"{path}.plan_review.invocations[{i}].tool_usage", c)
-    if len(agent_ids) > 1:
-        c.error(f"{path}.plan_review", "recheck must reuse the review agent")
+        c.nonempty(ident, f"{ip}.agent_id")
+        agent_ids.append(ident)
+        tool_usage(invocation.get("tool_usage"), 10, f"{ip}.tool_usage", c)
+        if "continuation_of" in invocation and i == 0:
+            c.error(ip, "the initial review cannot be a continuation")
+    if len(agent_ids) == 2 and agent_ids[0] != agent_ids[1]:
+        recheck = invocations[1] if isinstance(invocations[1], dict) else {}
+        if recheck.get("continuation_of") != agent_ids[0]:
+            c.error(f"{path}.plan_review", "recheck must reuse the review agent or continue it by continuation_of")
+        else:
+            c.nonempty(recheck.get("prior_review"), f"{path}.plan_review.invocations[1].prior_review")
     if required and status == "not_required":
         c.error(f"{path}.plan_review", "triggered review cannot be skipped")
     if not required and (status != "not_required" or invocations):
@@ -331,9 +360,7 @@ def dispatch(ledger: dict, c: Check, selected_unit: str | None = None,
                 c.error(f"units.{uid}.limits.{key}", "exceeds default without authorization reference")
         entries = c.array(unit.get("entries"), f"units.{uid}.entries")
         c.ids(entries, f"units.{uid}.entries")
-        initial_terminal = {e.get("target") for e in entries if isinstance(e, dict)
-                            and e.get("kind") == "explore" and e.get("dispatched_at")
-                            and e.get("state") in {"finished", "failed", "cancelled"}}
+        initial_terminal = initial_returned(entries)
         counts = {"initial": 0, "supplementary": 0, "extra_explorer": 0,
                   "critic": 0, "retry": 0, "investigation_total": 0, "status_check": 0}
         explored = set()
@@ -347,10 +374,11 @@ def dispatch(ledger: dict, c: Check, selected_unit: str | None = None,
             if not c.nonempty(e.get("target"), f"{p}.target"):
                 continue
             tool_usage(e.get("tool_usage"), 30 if kind == "explore" else 10, f"{p}.tool_usage", c, authorized(unit))
-            if st == "cancelled" and e.get("dispatched_at") is None:
-                if not c.nonempty(e.get("release_reason"), f"{p}.release_reason"):
-                    continue
+            if pre_dispatch_cancel(e):
+                c.nonempty(e.get("release_reason"), f"{p}.release_reason")
                 continue
+            if st == "cancelled" and e.get("dispatched_at") is None:
+                c.warn(p, "cancelled work has recorded usage, so it counts as dispatched and keeps its budget")
             if kind == "explore" and rnd != 1:
                 c.error(p, "initial exploration must be Round 1")
             if kind in SUPPLEMENT and rnd != 2:
@@ -575,9 +603,7 @@ def report(state: dict, ledger: dict, c: Check) -> None:
             entries = recorded.get("entries", [])
             if any(isinstance(e, dict) and e.get("state") in {"reserved", "dispatched"} for e in entries):
                 c.error(f"units[{i}]", "complete with unfinished work")
-            initial_done = {e.get("target") for e in entries if isinstance(e, dict)
-                            and e.get("kind") == "explore" and e.get("dispatched_at")
-                            and e.get("state") in {"finished", "failed", "cancelled"}}
+            initial_done = initial_returned(entries)
             if set(recorded.get("initial_axis_ids", [])) != initial_done:
                 c.error(f"units[{i}]", "complete before the whole initial cohort returned")
     sps = state.get("subproblems")

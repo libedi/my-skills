@@ -178,6 +178,32 @@ class ValidatorTests(unittest.TestCase):
         review["invocations"].append(copy.deepcopy(review["invocations"][0]))
         self.assertTrue(any("two review" in e for e in self.check(validate.plan, s).errors))
 
+    def test_plan_review_recheck_as_continuation_when_reviewer_cannot_resume(self):
+        s = state()
+        review = s["units"][0]["plan_review"]
+        review.update(required=True, triggers=["forced_partition"], status="resolved", invocations=[
+            {"agent_id": "review-1", "tool_usage": usage(10)},
+            {"agent_id": "review-2", "continuation_of": "review-1",
+             "prior_review": "research/R-1/reviews/U1-review-1.json", "tool_usage": usage(10)},
+        ])
+        self.assertFalse(self.check(validate.plan, s).errors)
+
+        recheck = review["invocations"][1]
+        del recheck["prior_review"]
+        self.assertTrue(any("prior_review" in e for e in self.check(validate.plan, s).errors))
+
+        recheck["prior_review"] = "research/R-1/reviews/U1-review-1.json"
+        recheck["continuation_of"] = "review-0"
+        self.assertTrue(any("reuse" in e for e in self.check(validate.plan, s).errors))
+
+        recheck["continuation_of"] = "review-1"
+        review["invocations"][0]["continuation_of"] = "review-0"
+        self.assertTrue(any("initial review" in e for e in self.check(validate.plan, s).errors))
+
+        del review["invocations"][0]["continuation_of"]
+        review["invocations"].append(dict(recheck, agent_id="review-3"))
+        self.assertTrue(any("two review" in e for e in self.check(validate.plan, s).errors))
+
     def test_tool_call_budget_and_log_mismatch(self):
         l = ledger()
         entry = l["units"]["U1"]["entries"][0]
@@ -353,6 +379,29 @@ class ValidatorTests(unittest.TestCase):
         self.assertTrue(any("unfinished final consistency" in e for e in self.check(validate.report, s, l).errors))
         l["request_usage"]["consistency_entries"][0]["state"] = "finished"
         self.assertFalse(self.check(validate.report, s, l).errors)
+
+    def test_finished_initial_work_without_timestamp_counts_as_returned(self):
+        s, l = state(), ledger()
+        del l["units"]["U1"]["entries"][0]["dispatched_at"]
+        self.assertFalse(self.check(validate.report, s, l).errors)
+        l["units"]["U1"]["entries"].append(
+            {"id": "W2", "round": 2, "kind": "verify", "target": "A",
+             "state": "reserved", "tool_usage": usage(10)})
+        self.assertFalse(self.check(validate.dispatch, l, state=s).errors)
+
+    def test_cancelled_work_with_usage_cannot_release_budget_without_timestamp(self):
+        s, l = state(), ledger()
+        s["units"][0]["axes"] = [axis("A"), axis("B")]
+        l["units"]["U1"]["initial_axis_ids"] = ["A", "B"]
+        l["units"]["U1"]["entries"].extend([
+            {"id": "W2", "round": 1, "kind": "explore", "target": "B", "state": "cancelled",
+             "release_reason": "Looks pre-dispatch", "tool_usage": usage(30, 30)},
+            {"id": "W3", "round": 1, "kind": "explore", "target": "B", "state": "finished",
+             "dispatched_at": "2026-09-23T00:03:00Z", "tool_usage": usage(30, 30)},
+        ])
+        c = self.check(validate.dispatch, l, state=s)
+        self.assertTrue(any("already dispatched" in x for x in c.errors))
+        self.assertTrue(any("counts as dispatched" in x for x in c.warnings))
 
 
 if __name__ == "__main__":
