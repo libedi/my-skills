@@ -48,7 +48,7 @@ updated: [YYYY-MM-DD]
 테스트 후보:
 - 
 
-MODULE_SPEC 반영 후보:
+모듈 문서 반영 후보:
 - 
 
 ## 결정사항
