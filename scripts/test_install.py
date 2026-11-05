@@ -18,7 +18,7 @@ class InstallTests(unittest.TestCase):
                 capture_output=True,
                 check=True,
             )
-            self.assertIn("Available skills: research", result.stdout)
+            self.assertIn("Available skills: brainstorming, research", result.stdout)
             self.assertFalse((root / ".agents").exists())
 
     def test_copy_install_and_uninstall_both_runtimes(self):

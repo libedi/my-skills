@@ -1,0 +1,8 @@
+{
+  "name": "brainstorming",
+  "agents": {
+    "codex": [],
+    "claude": [],
+    "kiro": []
+  }
+}
