@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>브레인스토밍 보드</title>
+<style>
+:root{--bg:#fff;--fg:#1f1f1d;--muted:#6b6a65;--line:#e2e0d8;--card:#f6f5f1;--accent:#185fa5;--accent-bg:#e6f1fb;--warn:#854f0b;--warn-bg:#faeeda;--danger:#a32d2d;--radius:10px}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1b;--fg:#ecebe6;--muted:#a3a29b;--line:#3a3936;--card:#262624;--accent:#85b7eb;--accent-bg:#0c2c4c;--warn:#fac775;--warn-bg:#3d2805;--danger:#f09595}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-apple-system,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 20px 64px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+h1{font-size:18px;font-weight:600;margin:0}
+.rid{font:12px ui-monospace,Consolas,monospace;color:var(--muted)}
+.ctx{color:var(--muted);font-size:14px;margin:6px 0 0}
+details.hist{margin-top:16px;border:1px solid var(--line);border-radius:var(--radius);padding:8px 12px}
+details.hist summary{cursor:pointer;color:var(--muted);font-size:13px}
+.hrow{padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.hrow .hq{color:var(--muted);font-size:13px}
+.hrow .hl{display:flex;justify-content:space-between;align-items:center;gap:8px}
+fieldset{border:0;padding:0;margin:0;min-width:0}
+.sec{font-size:13px;color:var(--muted);margin:24px 0 2px}
+.item{margin-top:20px}
+.row{padding:12px 0;border-top:1px solid var(--line)}
+.q{font-weight:600}
+.note{font-size:13px;color:var(--muted)}
+.tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:6px;background:var(--accent-bg);color:var(--accent);margin-right:6px;font-weight:500;vertical-align:1px}
+.tag.assume{background:var(--warn-bg);color:var(--warn)}
+button{font:inherit;font-size:14px;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:6px 14px;min-height:36px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--muted)}
+button.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.55;cursor:default}
+button.primary{border-color:var(--accent);color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}
+.opt{display:block;width:100%;text-align:left;padding:12px 14px;border-radius:var(--radius);height:auto}
+.opt.on{border-width:2px;padding:11px 13px}
+.opt .l{font-weight:600}
+.opt .d{display:block;font-size:13px;color:var(--muted);margin-top:2px;font-weight:400}
+.rec{font-size:11px;padding:1px 6px;border-radius:6px;background:var(--accent-bg);color:var(--accent);margin-left:6px;font-weight:500}
+textarea,input[type=text]{width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px}
+input[type=range]{width:100%;margin-top:10px}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-top:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:13px;border-top:none}
+td.ask-row{border-top:none;padding-top:0}
+.ask{display:inline-block;padding:1px 8px;border-radius:6px;background:var(--warn-bg);color:var(--warn)}
+.ask.done{background:var(--accent-bg);color:var(--accent)}
+.bk h3{font-size:14px;font-weight:600;margin:16px 0 0;display:flex;justify-content:space-between}
+.bk h3 small{font-weight:400;color:var(--muted)}
+.moved{font-size:12px;color:var(--accent);margin-left:6px}
+.ends{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:20px}
+#err{color:var(--danger);font-size:14px;min-height:20px;margin-top:16px}
+#status{color:var(--muted);font-size:14px;margin-top:10px}
+.banner{margin-top:16px;padding:12px 14px;border-radius:var(--radius);background:var(--warn-bg);color:var(--warn);font-size:14px}
+.screen{margin:56px auto 0;max-width:480px;text-align:center;color:var(--muted)}
+.screen h2{color:var(--fg);font-size:18px;font-weight:600}
+.next{margin-top:16px;padding:12px 14px;border-radius:var(--radius);background:var(--card);text-align:left;color:var(--fg)}
+</style>
+</head>
+<body>
+<main id="app"><p class="screen">보드를 불러오는 중이에요.</p></main>
+<script>
+(() => {
+  const TOKEN = new URLSearchParams(location.search).get('t') || '';
+  const app = document.getElementById('app');
+  const SCALES = {
+    confirm: { values: [['ok', '맞음'], ['no', '아님']], memoOn: ['no'] },
+    assumption: { values: [['fact', '확인된 사실'], ['assume', '일단 진행'], ['no', '아님']], memoOn: ['no'] },
+    react: { values: [['yes', '끌림'], ['part', '일부'], ['no', '아님']], memoOn: [] },
+    judge: { values: [['ok', '성공'], ['fail', '실패'], ['unsure', '모름']], memoOn: [] }
+  };
+  let view = { roundId: null, phase: null };
+  let form = null;
+  let failures = 0;
+  let closed = false;
+
+  function el(tag, attrs, ...children) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === undefined || v === null || v === false) continue;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else if (k in n && typeof v !== 'string') n[k] = v;
+      else n.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of children.flat(Infinity)) {
+      if (c === null || c === undefined || c === false) continue;
+      n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    }
+    return n;
+  }
+
+  const $ = (id) => document.getElementById(id);
+  const showErr = (m) => { const e = $('err'); if (e) e.textContent = m; };
+  const clearErr = () => showErr('');
+
+  function setTitle(prefix) {
+    const t = (form && form.title) || '브레인스토밍';
+    document.title = prefix ? `${prefix} · ${t}` : t;
+  }
+
+  function screen(title, ...body) {
+    form = null;
+    app.replaceChildren(el('div', { class: 'screen' }, el('h2', { text: title }), body));
+  }
+
+  function headline(it) {
+    const tag = it.tag ? el('span', { class: 'tag' + (String(it.tag).includes('가정') ? ' assume' : ''), text: it.tag }) : null;
+    return [el('div', {}, tag, el('span', { class: 'q', text: it.text || '' })), it.note ? el('div', { class: 'note', text: it.note }) : null];
+  }
+
+  function field(id, opts) {
+    form.fields.push(Object.assign({ id, required: true, memoOn: [] }, opts));
+  }
+
+  function choiceBlock(id, options, cfg, onPick) {
+    const memo = el('input', { type: 'text', hidden: true, placeholder: cfg.otherPlaceholder || '어떻게 해야 하나요?', oninput: (e) => { form.memos[id] = e.target.value; clearErr(); } });
+    const buttons = options.map((o) => el('button', { type: 'button', class: 'opt', 'data-v': o.v, onclick: () => pick(o.v, o) },
+      el('span', { class: 'l' }, o.label, o.recommended ? el('span', { class: 'rec', text: '추천' }) : null),
+      o.desc ? el('span', { class: 'd', text: o.desc }) : null));
+    if (cfg.other !== false) {
+      buttons.push(el('button', { type: 'button', class: 'opt', 'data-v': 'other', onclick: () => pick('other', null) },
+        el('span', { class: 'l', text: cfg.otherLabel || '다른 답이 있어요' })));
+    }
+    const grid = el('div', { class: 'opts' }, buttons);
+    function pick(v, o) {
+      form.answers[id] = v;
+      grid.querySelectorAll('.opt').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+      memo.hidden = v !== 'other';
+      if (onPick) onPick(v, o);
+      clearErr();
+    }
+    field(id, { kind: 'value', required: cfg.required !== false, memoOn: ['other'], needsMemo: ['other'] });
+    return [grid, memo];
+  }
+
+  const RENDER = {
+    rate(it) {
+      const sc = Array.isArray(it.scale)
+        ? { values: it.scale.map((o) => [o.v, o.label]), memoOn: [] }
+        : SCALES[it.scale || 'confirm'];
+      const memoOn = it.memoOn || sc.memoOn;
+      const memo = el('input', { type: 'text', hidden: true, placeholder: it.memoPlaceholder || '어떻게 다른가요? (선택)', oninput: (e) => { form.memos[it.id] = e.target.value; clearErr(); } });
+      const seg = el('div', { class: 'seg' }, sc.values.map(([v, label]) => el('button', {
+        type: 'button', 'data-v': v, text: label,
+        onclick: () => {
+          form.answers[it.id] = v;
+          seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+          memo.hidden = !memoOn.includes(v);
+          clearErr();
+        }
+      })));
+      field(it.id, { kind: 'value', required: it.required !== false, memoOn });
+      return el('div', { class: 'row' }, headline(it), seg, memo);
+    },
+    choose(it) {
+      return el('div', { class: 'item' }, headline(it), choiceBlock(it.id, it.options, it));
+    },
+    table(it) {
+      const cols = it.columns.length;
+      const tbl = el('table', {}, el('tr', {}, it.columns.map((c) => el('th', { text: c }))));
+      for (const row of it.rows) {
+        const asks = [];
+        tbl.append(el('tr', {}, row.map((cell) => {
+          if (cell && typeof cell === 'object' && cell.ask) {
+            const badge = el('span', { class: 'ask', text: '???' });
+            asks.push({ cell, badge });
+            return el('td', {}, badge);
+          }
+          return el('td', { text: cell === null || cell === undefined ? '' : String(cell) });
+        })));
+        for (const { cell, badge } of asks) {
+          const block = choiceBlock(cell.ask, cell.options, cell, (v, o) => {
+            badge.textContent = v === 'other' ? '기타' : (o.short || o.label);
+            badge.classList.add('done');
+          });
+          tbl.append(el('tr', {}, el('td', { class: 'ask-row', colspan: String(cols) }, cell.text ? el('div', { class: 'note', text: cell.text }) : null, block)));
+        }
+      }
+      return el('div', { class: 'item' }, headline(it), tbl);
+    },
+    bucket(it) {
+      const orig = {};
+      const cur = {};
+      for (const e of it.entries) { orig[e.id] = e.bucket; cur[e.id] = e.bucket; }
+      form.buckets[it.id] = { orig, cur };
+      const box = el('div', { class: 'bk' });
+      const keys = Object.keys(it.buckets);
+      const draw = () => {
+        box.replaceChildren(...keys.map((k) => {
+          const list = it.entries.filter((e) => cur[e.id] === k);
+          const budget = it.budget && it.budget[k];
+          return el('div', {},
+            el('h3', {}, `${k}. ${it.buckets[k]}`, el('small', { text: budget ? `${list.length} / 예산 ${budget}` : `${list.length}개` })),
+            list.length ? list.map((e) => el('div', { class: 'row' },
+              el('div', {}, e.text, orig[e.id] !== k ? el('span', { class: 'moved', text: `${orig[e.id]}에서 옮김` }) : null),
+              el('div', { class: 'note', text: e.note ? `${e.id} · ${e.note}` : e.id }),
+              el('div', { class: 'seg' }, keys.map((b) => el('button', {
+                type: 'button', class: b === k ? 'on' : '', text: b, 'aria-label': `${it.buckets[b]}(으)로 옮기기`,
+                onclick: () => { cur[e.id] = b; draw(); }
+              }))))) : el('div', { class: 'note', text: '비어 있음' }));
+        }));
+      };
+      draw();
+      field(it.id, { kind: 'bucket', required: false });
+      return el('div', { class: 'item' }, headline(it), box);
+    },
+    spectrum(it) {
+      const min = it.min ?? 0;
+      const max = it.max ?? 10;
+      const readout = el('div', { class: 'note', text: '아직 움직이지 않았어요' });
+      const range = el('input', {
+        type: 'range', min: String(min), max: String(max), step: String(it.step ?? 1), value: String(Math.round((min + max) / 2)),
+        oninput: (e) => { form.answers[it.id] = Number(e.target.value); readout.textContent = `${e.target.value} / ${max}`; clearErr(); }
+      });
+      field(it.id, { kind: 'value', required: it.required === true });
+      return el('div', { class: 'item' }, headline(it), range, el('div', { class: 'ends' }, el('span', { text: it.left || '' }), el('span', { text: it.right || '' })), readout);
+    },
+    text(it, gated) {
+      const ta = el('textarea', { rows: '3', placeholder: it.placeholder || '', oninput: (e) => { form.answers[it.id] = e.target.value; clearErr(); } });
+      const parts = [headline(it), ta];
+      if (it.gate && gated) {
+        form.gate = { id: it.id, open: false, original: null, ta };
+        const done = el('button', { type: 'button', text: '다 적었어요', onclick: () => {
+          if (!ta.value.trim()) { showErr('한 줄이라도 적거나 "보기부터 볼게요"를 눌러주세요'); return; }
+          open(ta.value.trim());
+        } });
+        const skip = it.skippable === false ? null : el('button', { type: 'button', text: '잘 모르겠어요, 보기부터 볼게요', onclick: () => open(null) });
+        const open = (v) => {
+          form.gate.open = true;
+          form.gate.original = v;
+          done.disabled = true;
+          if (skip) skip.disabled = true;
+          gated.hidden = false;
+          clearErr();
+        };
+        parts.push(el('div', { class: 'seg' }, done, skip));
+      }
+      field(it.id, { kind: 'text', required: it.required === true });
+      return el('div', { class: 'item' }, parts);
+    }
+  };
+
+  function renderRound(round) {
+    const d = round.data || {};
+    form = { id: round.id, title: d.title || '브레인스토밍', fields: [], answers: {}, memos: {}, buckets: {}, reopen: {}, gate: null, sent: false };
+
+    const history = Array.isArray(d.history) && d.history.length ? el('details', { class: 'hist' },
+      el('summary', { text: `지난 답 ${d.history.length}개` }),
+      d.history.map((h) => {
+        const memo = el('input', { type: 'text', hidden: true, placeholder: '왜 다시 보고 싶은가요? (선택)', oninput: (e) => { if (form.reopen[h.id]) form.reopen[h.id].memo = e.target.value; } });
+        const btn = h.id ? el('button', { type: 'button', text: '다시 보기', onclick: () => {
+          if (form.reopen[h.id]) { delete form.reopen[h.id]; btn.classList.remove('on'); memo.hidden = true; }
+          else { form.reopen[h.id] = { id: h.id, memo: memo.value }; btn.classList.add('on'); memo.hidden = false; }
+        } }) : null;
+        return el('div', { class: 'hrow' }, el('div', { class: 'hq', text: h.q || h.id || '' }), el('div', { class: 'hl' }, el('span', { text: h.a || '' }), btn), memo);
+      })) : null;
+
+    const items = el('div');
+    let target = items;
+    let section = null;
+    for (const it of d.items || []) {
+      if (it.section && it.section !== section) { section = it.section; target.append(el('div', { class: 'sec', text: section })); }
+      if (it.type === 'text' && it.gate && !form.gate) {
+        const gated = el('div', { hidden: true });
+        target.append(RENDER.text(it, gated));
+        items.append(gated);
+        target = gated;
+        continue;
+      }
+      const render = RENDER[it.type];
+      if (render) target.append(render(it));
+    }
+
+    const free = el('textarea', { id: 'free', rows: '2', placeholder: '새로 떠오른 생각이나 다른 이야기가 있으면 적어주세요 (선택)', oninput: clearErr });
+
+    app.replaceChildren(
+      el('header', {}, el('h1', { text: form.title }), el('span', { class: 'rid', text: round.id })),
+      ...(d.context || []).map((c) => el('p', { class: 'ctx', text: c })),
+      el('div', { id: 'banner', class: 'banner', hidden: true }),
+      el('fieldset', { id: 'fs' },
+        history,
+        items,
+        el('div', { class: 'sec', text: '더 하고 싶은 이야기' }),
+        free,
+        el('div', { id: 'err' }),
+        el('footer', {},
+          el('button', { type: 'button', text: '채팅에서 계속하기', onclick: () => submit('exit') }),
+          el('button', { type: 'button', class: 'primary', text: '에이전트에게 보내기', onclick: () => submit('answer') }))),
+      el('div', { id: 'status' })
+    );
+    window.scrollTo(0, 0);
+  }
+
+  function collect() {
+    const answers = {};
+    const pending = [];
+    const missing = [];
+    for (const f of form.fields) {
+      if (f.kind === 'bucket') {
+        const b = form.buckets[f.id];
+        answers[f.id] = { moves: Object.keys(b.cur).filter((k) => b.cur[k] !== b.orig[k]).map((k) => ({ id: k, from: b.orig[k], to: b.cur[k] })) };
+        continue;
+      }
+      if (f.kind === 'text' && form.gate && form.gate.id === f.id) {
+        const now = form.gate.ta.value || '';
+        if (!form.gate.open) { pending.push(f.id); missing.push(f.id); continue; }
+        answers[f.id] = form.gate.original === null
+          ? { skipped: true }
+          : Object.assign({ value: form.gate.original }, now.trim() && now.trim() !== form.gate.original ? { edited: now.trim() } : {});
+        continue;
+      }
+      const v = form.answers[f.id];
+      const empty = v === undefined || (typeof v === 'string' && !v.trim());
+      if (empty) { pending.push(f.id); if (f.required) missing.push(f.id); continue; }
+      const a = { value: typeof v === 'string' ? v.trim() : v };
+      const memo = (form.memos[f.id] || '').trim();
+      if (memo && f.memoOn.includes(v)) a.memo = memo;
+      if (f.needsMemo && f.needsMemo.includes(v) && !memo) missing.push(`${f.id}(내용)`);
+      answers[f.id] = a;
+    }
+    const reopen = Object.values(form.reopen).map((r) => r.memo && r.memo.trim() ? { id: r.id, memo: r.memo.trim() } : { id: r.id });
+    return { answers, pending, missing, reopen, memo: ($('free').value || '').trim() };
+  }
+
+  async function submit(kind) {
+    if (!form || form.sent) return;
+    const c = collect();
+    if (kind === 'answer' && c.missing.length) {
+      showErr(`아직 답하지 않은 항목이 있어요: ${c.missing.join(', ')}`);
+      return;
+    }
+    let r;
+    try {
+      r = await fetch(`/api/answer?t=${encodeURIComponent(TOKEN)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ round: form.id, kind, answers: c.answers, pending: c.pending, reopen: c.reopen, memo: c.memo })
+      });
+    } catch {
+      showErr('보드 서버에 연결할 수 없어요.');
+      return;
+    }
+    if (r.status === 409) {
+      const e = await r.json().catch(() => ({}));
+      showErr(e.error === 'not-waiting'
+        ? '에이전트가 지금 기다리고 있지 않아요. 채팅에서 이어가 주세요.'
+        : '이미 지나간 질문이에요. 새 질문으로 바뀔 때까지 잠시 기다려 주세요.');
+      return;
+    }
+    if (!r.ok) { showErr(`보내지 못했어요 (${r.status}).`); return; }
+    form.sent = kind;
+    applyPhase('processing');
+  }
+
+  function applyPhase(phase) {
+    if (!form) return;
+    const fs = $('fs');
+    const banner = $('banner');
+    const status = $('status');
+    fs.disabled = phase !== 'asking' || !!form.sent;
+    banner.hidden = phase !== 'detached';
+    banner.textContent = '에이전트가 지금 이 보드를 기다리고 있지 않아요. 채팅에서 이어가 주세요. 적어둔 내용은 그대로 있어요.';
+    if (phase === 'asking' && !form.sent) { status.textContent = ''; setTitle('● 답변 필요'); }
+    else if (phase === 'detached') { status.textContent = ''; setTitle('채팅 확인'); }
+    else {
+      status.textContent = form.sent === 'exit'
+        ? '채팅에서 이어갈게요. 고른 답과 메모도 함께 보냈어요.'
+        : '보냈어요. 에이전트가 다음 질문을 정하는 중이에요.';
+      setTitle('기다리는 중');
+    }
+  }
+
+  function apply(s) {
+    if (s.phase === 'handoff') {
+      if (view.phase !== 'handoff') {
+        screen('채팅에서 이어갈게요',
+          s.handoff && s.handoff.reason ? el('p', { text: s.handoff.reason }) : null,
+          s.handoff && s.handoff.next ? el('div', { class: 'next' }, el('div', { class: 'note', text: '다음 질문' }), el('div', { text: s.handoff.next })) : null,
+          el('p', { text: '에이전트 채팅으로 돌아가 주세요. 이 탭은 열어둬도, 닫아도 괜찮아요.' }));
+        document.title = '→ 채팅에서 계속';
+      }
+      view = { roundId: null, phase: 'handoff' };
+      return;
+    }
+    if (s.phase === 'idle' || !s.round) {
+      if (view.phase !== 'idle') { screen('잠시만요', el('p', { text: '에이전트가 질문을 준비하는 중이에요.' })); document.title = '기다리는 중'; }
+      view = { roundId: null, phase: 'idle' };
+      return;
+    }
+    if (s.round.id !== view.roundId) renderRound(s.round);
+    applyPhase(s.phase);
+    view = { roundId: s.round.id, phase: s.phase };
+  }
+
+  async function poll() {
+    if (closed) return;
+    try {
+      const r = await fetch(`/api/state?t=${encodeURIComponent(TOKEN)}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(String(r.status));
+      failures = 0;
+      apply(await r.json());
+    } catch {
+      if (++failures >= 3) {
+        closed = true;
+        screen('보드가 닫혔어요', el('p', { text: '브레인스토밍이 끝났거나 보드 서버가 멈췄어요. 이 탭은 닫아도 돼요.' }));
+        document.title = '보드 닫힘';
+        return;
+      }
+    }
+    setTimeout(poll, 1000);
+  }
+
+  poll();
+})();
+</script>
+</body>
+</html>
